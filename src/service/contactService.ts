@@ -1,4 +1,4 @@
-import { PrismaClient, Contact, LinkPrecedence } from '@prisma/client';
+import { PrismaClient, Contact } from '@prisma/client';
 
 interface ContactDTO {
   primaryContatctId: number;
