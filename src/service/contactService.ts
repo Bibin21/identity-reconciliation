@@ -59,33 +59,37 @@ export class ContactService {
       },
     });
   }  private async updateContactsToPrimary(primary: Contact, contacts: Contact[]): Promise<void> {
-    const contactMap = new Map<number, Contact>();
-    contacts.forEach(c => contactMap.set(c.id, c));
-
     // Get the IDs of all other primary contacts
-    const otherPrimaryIds = new Set<number>();
-    contacts.forEach(c => {
-      if (c.linkPrecedence === 'primary' && c.id !== primary.id) {
-        otherPrimaryIds.add(c.id);
+    const otherPrimaryIds = contacts
+      .filter(c => c.linkPrecedence === 'primary' && c.id !== primary.id)
+      .map(c => c.id);
+
+    if (otherPrimaryIds.length === 0) return;
+
+    // Find all secondaries linked to these primaries
+    const secondaryIds = contacts
+      .filter(c => c.linkedId && otherPrimaryIds.includes(c.linkedId))
+      .map(c => c.id);
+
+    // list of rows to be updated
+    const allIdsToUpdate = [...otherPrimaryIds, ...secondaryIds];
+
+    console.log(allIdsToUpdate);
+
+    if (allIdsToUpdate.length === 0) return;
+
+    // Single batch update for all contacts
+    await this.prisma.contact.updateMany({
+      where: {
+        id: {
+          in: allIdsToUpdate
+        }
+      },
+      data: {
+        linkPrecedence: 'secondary',
+        linkedId: primary.id,
       }
     });
-
-    // Find contacts that need to be updated (Primary and Seconadries linked to primaries)
-    const contactsToUpdate = contacts.filter(c =>
-      (c.linkPrecedence === 'primary' && c.id !== primary.id) || // other primaries
-      (c.linkedId && otherPrimaryIds.has(c.linkedId))           // secondaries linked to other primaries
-    );
-
-    // updating all contacts to point to new primary
-    for (const contact of contactsToUpdate) {
-      await this.prisma.contact.update({
-        where: { id: contact.id },
-        data: {
-          linkPrecedence: 'secondary' as LinkPrecedence,
-          linkedId: primary.id,
-        },
-      });
-    }
   }
 
   private formatResponse(primary: Contact, relatedContacts: Contact[]): ContactDTO {
@@ -106,66 +110,67 @@ export class ContactService {
       secondaryContactIds: secondaryIds,
     };
   }
-
   public async identifyContact(email?: string, phoneNumber?: string): Promise<ContactDTO> {
     if (!email && !phoneNumber) {
       throw new Error('Email or phoneNumber required');
     }
 
-    // Find all contacts with matching email or phone
-    const contacts = await this.findContactsByEmailOrPhone(email, phoneNumber);
+    return await this.prisma.$transaction(async (prisma) => {
+      // Find all contacts with matching email or phone
+      const contacts = await this.findContactsByEmailOrPhone(email, phoneNumber);
 
-    // If no existing links found create new
-    if (contacts.length === 0) {
-      const newContact = await this.createPrimaryContact(email, phoneNumber);
-      return this.formatResponse(newContact, []);
-    }
+      // If no existing links found create new
+      if (contacts.length === 0) {
+        const newContact = await this.createPrimaryContact(email, phoneNumber);
+        return this.formatResponse(newContact, []);
+      }
 
-    // Get all related contacts
-    const contactIds = new Set<number>();
-    for (const c of contacts) {
-      if (c.linkedId) contactIds.add(c.linkedId);
-      contactIds.add(c.id);
-    }
+      // Get all related contacts
+      const contactIds = new Set<number>();
+      for (const c of contacts) {
+        if (c.linkedId) contactIds.add(c.linkedId);
+        contactIds.add(c.id);
+      }
 
-    const allRelated = await this.getAllRelatedContacts(contactIds);
+      const allRelated = await this.getAllRelatedContacts(contactIds);
 
-    // Find the oldest primaru
-    const primary = allRelated.reduce((oldest, curr) => {
-      return oldest.createdAt < curr.createdAt ? oldest : curr;
-    });
+      // Find the oldest primary
+      const primary = allRelated.reduce((oldest, curr) => {
+        return oldest.createdAt < curr.createdAt ? oldest : curr;
+      });
 
+      await this.updateContactsToPrimary(primary, allRelated);
 
-    await this.updateContactsToPrimary(primary, allRelated); // we have a unique constraint + a check
-    const exactMatchExists = allRelated.some(
-      c => 
-        c.email === (email || null) && 
-        c.phoneNumber === (phoneNumber?.toString() || null)
-    );
-
-    // Check if we have partial match but with new information
-    const hasPartialMatchWithNewInfo = !exactMatchExists && allRelated.some(
-      c =>
-        (email && c.email === email && c.phoneNumber !== (phoneNumber?.toString() || null)) ||
-        (phoneNumber && c.phoneNumber === phoneNumber.toString() && c.email !== (email || null))
-    );
-
-    // Create secondary contact for a partial match
-    if (hasPartialMatchWithNewInfo) {
-      await this.createSecondaryContact(
-        email || null,
-        phoneNumber?.toString() || null,
-        primary.id
+      const exactMatchExists = allRelated.some(
+        c => 
+          c.email === (email || null) && 
+          c.phoneNumber === (phoneNumber?.toString() || null)
       );
-    }
 
-    // return result with primary contact and all related contacts
-    const finalContacts = await this.prisma.contact.findMany({
-      where: {
-        OR: [{ id: primary.id }, { linkedId: primary.id }],
-      },
+      // if we have partial match but with new info
+      const hasPartialMatchWithNewInfo = !exactMatchExists && allRelated.some(
+        c =>
+          (email && c.email === email && c.phoneNumber !== (phoneNumber?.toString() || null)) ||
+          (phoneNumber && c.phoneNumber === phoneNumber.toString() && c.email !== (email || null))
+      );
+
+      // Create secondary contact for a partial match
+      if (hasPartialMatchWithNewInfo) {
+        await this.createSecondaryContact(
+          email || null,
+          phoneNumber?.toString() || null,
+          primary.id
+        );
+      }
+
+      // Get final result
+      const finalContacts = await prisma.contact.findMany({
+        where: {
+          OR: [{ id: primary.id }, { linkedId: primary.id }],
+        },
+      });
+
+      return this.formatResponse(primary, finalContacts);
     });
-
-    return this.formatResponse(primary, finalContacts);
   }
 }
