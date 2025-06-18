@@ -1,19 +1,25 @@
-import { Request, Response,NextFunction } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Request, Response, NextFunction } from 'express';
+import { ContactService } from '../service/ContactService';
 
-const prisma = new PrismaClient();
+const contactService = new ContactService();
 
-export const handleIdentify = (req: Request, res: Response, next: NextFunction) => {
-  // function implementation here
-  const { email, phoneNumber } = req.body;
+export const handleIdentify = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { email, phoneNumber } = req.body;
 
-  // Example placeholder
-  return res.status(200).json({
-    contact: {
-      primaryContatctId: 1,
-      emails: [email],
-      phoneNumbers: [phoneNumber],
-      secondaryContactIds: []
+    if (!email && !phoneNumber) {
+      res.status(400).json({ error: 'Email or phoneNumber required' });
+      return;
     }
-  });
+
+    const result = await contactService.identifyContact(email, phoneNumber?.toString());
+    res.json({ contact: result });
+  } catch (error) {
+    console.error('Error in handleIdentify:', error);
+    next(error);
+  }
 };

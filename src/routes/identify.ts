@@ -3,8 +3,6 @@ import { handleIdentify } from '../controllers/identifyController';
 
 const router = express.Router();
 
-router.post('/', (req, res, next) => {
-  handleIdentify(req, res, next);
-});
+router.post('/', handleIdentify); 
 
 export default router;

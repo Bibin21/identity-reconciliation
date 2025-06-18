@@ -25,6 +25,8 @@ model Contact {
 
   linkedContact  Contact?        @relation("Link", fields: [linkedId], references: [id])
   relatedContacts Contact[]      @relation("Link")
+
+  @@unique([email, phoneNumber])
 }
 
 enum LinkPrecedence {
