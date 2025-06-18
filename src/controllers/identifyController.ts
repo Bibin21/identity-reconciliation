@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { ContactService } from '../service/ContactService';
+import { ContactService } from '../service/contactService';
 
 const contactService = new ContactService();
 
