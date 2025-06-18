@@ -2,6 +2,18 @@
 
 A service that helps identify and link customer identities across multiple transactions with different contact information. This is particularly useful for e-commerce platforms where customers might use different email addresses or phone numbers across purchases.
 
+## Endpoint
+
+Hit POST Request on - https://identity-reconciliation-evlc.onrender.com/identify
+
+Body
+```json
+{
+  "email": "sample@gmail.com",
+  "phoneNumber": "718271827"
+}
+```
+
 ## Problem Statement
 
 E-commerce platforms need to track customer identities across multiple purchases, even when customers use different contact information. This service provides a way to:
